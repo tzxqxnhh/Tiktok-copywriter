@@ -29,15 +29,6 @@ codex-抖音爆款文案生成工具/
 │   └── chat_history.py      # SQLite 会话管理
 ├── templates/               # 模板资源
 │   └── copy_templates.json  # 预置 25 条爆款文案模板
-├── tests/                   # 单元测试
-│   ├── test_main.py
-│   ├── test_node1_sim_search.py
-│   ├── test_node2_knowledge.py
-│   ├── test_node3_generator.py
-│   ├── test_node4_analyzer.py
-│   ├── test_node5_scorer.py
-│   ├── test_vector_store.py
-│   └── test_chat_history.py
 └── docs/                    # 项目文档
     └── v1.0-report.md       # v1.0 版本报告
 ```
@@ -143,12 +134,6 @@ python main.py
 - **向量数据库**: ChromaDB（持久化存储）
 - **会话存储**: SQLite（WAL 模式）
 - **测试框架**: pytest 8.x
-
-## 运行测试
-
-```bash
-pytest tests/ -v
-```
 
 ## License
 
