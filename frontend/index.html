@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抖音爆款文案生成工具</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <!-- Vue 3 挂载点 -->
+    <div id="app">
+        <div class="app-container">
+            <!-- ============================================ -->
+            <!-- 左侧栏 -->
+            <!-- ============================================ -->
+            <div class="sidebar">
+                <!-- 会话面板（文案生成 Tab 显示） -->
+                <div v-if="activeTab === 'generation'" class="sidebar-panel">
+                    <div class="sidebar-title">抖音爆款文案生成</div>
+
+                    <div class="section-title">会话列表</div>
+                    <div class="session-list" v-if="sessions.length > 0">
+                        <div v-for="s in sessions" :key="s.id"
+                             class="session-item"
+                             :class="{ active: currentSessionId === s.id }"
+                             @click="onSelectSession(s.id)">
+                            <div class="session-title">{{ s.title }}</div>
+                            <div class="session-date">{{ s.created_at }}</div>
+                        </div>
+                    </div>
+                    <div class="placeholder-text" v-else style="padding: 20px 0; font-size: 13px;">
+                        暂无历史会话
+                    </div>
+
+                    <div class="btn-row">
+                        <button class="btn btn-secondary" @click="onNewSession">
+                            + 新建会话
+                        </button>
+                        <button class="btn btn-danger btn-sm"
+                                @click="onDeleteSession(currentSessionId)"
+                                :disabled="!currentSessionId">
+                            删除选中会话
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 知识库侧边栏面板（知识库管理 Tab 显示） -->
+                <div v-if="activeTab === 'knowledge-base'" class="sidebar-panel">
+                    <div class="sidebar-title" style="font-size: 16px;">知识库文档</div>
+
+                    <!-- 工具栏 -->
+                    <div class="toolbar">
+                        <select v-model="kbStyleFilter">
+                            <option value="全部">全部</option>
+                            <option v-for="s in styles" :key="s" :value="s">{{ s }}</option>
+                        </select>
+                        <button v-if="!batchDeleteMode" class="btn btn-sm btn-secondary" @click="enterBatchDeleteMode">
+                            批量删除
+                        </button>
+                        <button v-if="batchDeleteMode" class="btn btn-sm btn-secondary" @click="exitBatchDeleteMode">
+                            退出
+                        </button>
+                        <button v-if="batchDeleteMode" class="btn btn-sm btn-danger"
+                                @click="onBatchDeleteClick"
+                                :disabled="batchSelectedIds.length === 0">
+                            删除
+                        </button>
+                    </div>
+
+                    <!-- 文档列表滚动容器（DL-2修复：撑满可用空间） -->
+                    <div class="kb-list-container">
+                        <!-- 文档列表表格（普通模式与删除模式共用表格结构，BD-1修复） -->
+                        <table v-if="!showDeleteConfirm" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th v-if="batchDeleteMode" style="width: 8%;">选择</th>
+                                    <th :style="batchDeleteMode ? 'width: 10%;' : 'width: 12%;'">#</th>
+                                    <th :style="batchDeleteMode ? 'width: 62%;' : 'width: 68%;'">摘要</th>
+                                    <th :style="batchDeleteMode ? 'width: 20%;' : 'width: 20%;'">风格</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(row, idx) in kbRows" :key="idx"
+                                    @click="batchDeleteMode ? onToggleBatchRow(idx) : onKbRowClick(idx)"
+                                    :class="{ selected: !batchDeleteMode && kbSelectedRowIdx === idx }">
+                                    <td v-if="batchDeleteMode" @click.stop>
+                                        <input type="checkbox"
+                                               :value="kbDocuments[idx] ? kbDocuments[idx].id : ''"
+                                               v-model="batchSelectedIds"
+                                               @change="onBatchSelectionChange">
+                                    </td>
+                                    <td>{{ row[0] }}</td>
+                                    <td>{{ row[1] }}</td>
+                                    <td>{{ row[2] }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 确认删除行 -->
+                    <div v-if="showDeleteConfirm" class="confirm-row">
+                        <div class="confirm-text">
+                            确定要删除选中的 <strong>{{ batchSelectedIds.length }}</strong> 条文档吗？
+                        </div>
+                        <div class="btn-row">
+                            <button class="btn btn-danger btn-sm" @click="onConfirmDelete">确认删除</button>
+                            <button class="btn btn-secondary btn-sm" @click="onCancelDelete">取消</button>
+                        </div>
+                    </div>
+
+                    <!-- 分页 -->
+                    <div class="pagination">
+                        <button class="btn btn-sm btn-secondary"
+                                @click="onKbPrevPage"
+                                :disabled="kbOffset <= 0">上一页</button>
+                        <span class="page-info">{{ kbPageInfo }}</span>
+                        <button class="btn btn-sm btn-secondary"
+                                @click="onKbNextPage"
+                                :disabled="kbIsLastPage">下一页</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================ -->
+            <!-- 右侧主区域 -->
+            <!-- ============================================ -->
+            <div class="main-area">
+                <!-- Tab 头部 -->
+                <div class="tab-header">
+                    <button class="tab-btn"
+                            :class="{ active: activeTab === 'generation' }"
+                            @click="switchTab('generation')">
+                        文案生成
+                    </button>
+                    <button class="tab-btn"
+                            :class="{ active: activeTab === 'knowledge-base' }"
+                            @click="switchTab('knowledge-base')">
+                        知识库管理
+                    </button>
+                </div>
+
+                <!-- ======================================== -->
+                <!-- Tab: 文案生成 -->
+                <!-- ======================================== -->
+                <div v-if="activeTab === 'generation'" class="tab-content">
+                    <div class="input-group">
+                        <label>商品名称</label>
+                        <input type="text" v-model="productName"
+                               placeholder="输入商品名称，例如：迷你便携风扇">
+                    </div>
+
+                    <div class="input-group">
+                        <label>卖点描述</label>
+                        <textarea v-model="sellingPoints" rows="3"
+                                  placeholder="描述商品的核心卖点，例如：风力大、续航长、小巧便携"></textarea>
+                    </div>
+
+                    <!-- 模式选择 -->
+                    <div class="input-group">
+                        <label>生成模式</label>
+                        <div class="radio-group">
+                            <label class="radio-item">
+                                <input type="radio" value="copywriting" v-model="mode" @change="onModeChange">
+                                文案模式
+                            </label>
+                            <label class="radio-item">
+                                <input type="radio" value="director" v-model="mode" @change="onModeChange">
+                                导演模式
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 导演模式参数 -->
+                    <div v-if="mode === 'director'">
+                        <div class="input-group">
+                            <label>用户期望</label>
+                            <textarea v-model="userExpectation" rows="2"
+                                      placeholder="描述你想要的故事情节或视频风格，例如：都市白领的清晨困局"></textarea>
+                        </div>
+                        <div class="input-group">
+                            <label>导演风格</label>
+                            <div class="radio-group">
+                                <label v-for="s in styles" :key="s" class="radio-item">
+                                    <input type="radio" :value="s" v-model="directorStyle">
+                                    {{ s }}
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 文案模式参数 -->
+                    <div v-if="mode === 'copywriting'">
+                        <div class="input-group">
+                            <label>选择风格</label>
+                            <div class="checkbox-group">
+                                <label v-for="s in styles" :key="s" class="checkbox-item">
+                                    <input type="checkbox" :value="s" v-model="selectedStyles">
+                                    {{ s }}
+                                </label>
+                            </div>
+                        </div>
+                        <div class="slider-group">
+                            <label>
+                                <span>每种风格生成数量</span>
+                                <span>{{ copyCount }}</span>
+                            </label>
+                            <input type="range" min="1" max="10" v-model.number="copyCount">
+                        </div>
+                    </div>
+
+                    <!-- 操作按钮 -->
+                    <div class="btn-row" style="margin-bottom: 16px;">
+                        <button class="btn btn-primary" @click="onGenerate" :disabled="isGenerating">
+                            <span v-if="isGenerating">
+                                <span class="spinner" style="display: inline-flex; vertical-align: middle; margin-right: 6px;"></span>
+                                生成中...
+                            </span>
+                            <span v-else>生成文案</span>
+                        </button>
+                        <button class="btn btn-secondary" @click="onClear">清空</button>
+                    </div>
+
+                    <!-- 输出区域 -->
+                    <div v-if="generationOutput === '*等待输入商品信息...*'" class="placeholder-text">
+                        等待输入商品信息...
+                    </div>
+                    <div v-else-if="generationError" class="feedback feedback-error">
+                        {{ generationError }}
+                    </div>
+                    <div v-else class="markdown-content" v-html="renderedOutput"></div>
+                </div>
+
+                <!-- ======================================== -->
+                <!-- Tab: 知识库管理 -->
+                <!-- ======================================== -->
+                <div v-if="activeTab === 'knowledge-base'" class="tab-content">
+                    <!-- 文档详情面板 -->
+                    <div v-if="kbDetailVisible" class="detail-panel">
+                        <h3 style="margin: 0 0 10px 0; font-size: 14px; color: #555;">文档详情</h3>
+                        <div class="detail-content">{{ kbDetailContent }}</div>
+                        <div class="detail-meta" v-html="kbDetailMeta"></div>
+                        <button class="btn btn-sm btn-secondary" style="margin-top: 8px;"
+                                @click="kbDetailVisible = false">关闭详情</button>
+                    </div>
+
+                    <!-- 反馈消息 -->
+                    <div v-if="kbFeedback" class="feedback"
+                         :class="kbFeedback.startsWith('*') ? 'feedback-error' : 'feedback-success'"
+                         v-html="kbFeedback"></div>
+
+                    <!-- 添加区域 -->
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 16px 0;">
+                    <h3 style="font-size: 14px; color: #555; margin-bottom: 12px;">添加新内容</h3>
+
+                    <div class="input-group">
+                        <label>粘贴文案内容</label>
+                        <textarea v-model="kbAddText" rows="5"
+                                  placeholder="在此粘贴要添加到知识库的文案内容..."></textarea>
+                    </div>
+
+                    <div class="input-group">
+                        <label>或上传 .txt 文件</label>
+                        <input type="file" accept=".txt" @change="onKbFileSelected">
+                    </div>
+
+                    <div class="input-group">
+                        <label>内容类型</label>
+                        <select v-model="kbAddStyle">
+                            <option v-for="s in styles" :key="s" :value="s">{{ s }}</option>
+                        </select>
+                    </div>
+
+                    <button class="btn btn-primary" @click="onAddKnowledge" :disabled="isAddingKB">
+                        <span v-if="isAddingKB">
+                            <span class="spinner" style="display: inline-flex; vertical-align: middle; margin-right: 6px;"></span>
+                            添加中...
+                        </span>
+                        <span v-else>添加到知识库</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vue 3 CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- Marked.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- 自定义脚本（按依赖顺序加载） -->
+    <script src="/js/api.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>

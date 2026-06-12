@@ -1,3 +1,4 @@
+# 有bug，已弃用
 # 抖音爆款文案生成工具 -- Gradio 应用入口 + 工作流编排
 import os
 import sys
