@@ -32,7 +32,7 @@ desktop.ini
 *.sqlite3
 
 # 向量数据库
-data/chroma_db/
+data/
 
 # 测试
 .pytest_cache/
@@ -62,3 +62,7 @@ temp/
 AGENTS.md
 SKILL.md
 spec.md
+
+# 文案模板
+抖音导演模式文案模板.md
+

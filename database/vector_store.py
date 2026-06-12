@@ -145,7 +145,7 @@ def add_documents(chroma_collection, texts, metadatas):
     return doc_ids
 
 
-def search(chroma_collection, query, k=None, embedding_fn=None):
+def search(chroma_collection, query, k=None, embedding_fn=None, metadata_filter=None):
     """
     语义检索 top-k 文档
     参数:
@@ -153,25 +153,27 @@ def search(chroma_collection, query, k=None, embedding_fn=None):
       - query: 查询文本
       - k: 返回条数，默认使用 RETRIEVAL_TOP_K
       - embedding_fn: 可选的 embedding 函数，用于测试注入；为 None 时使用集合内置 embedding 函数
+      - metadata_filter: 可选的元数据过滤字典（ChromaDB where 子句格式，如 {"style": "剧情"}）
     返回:
       - list[Document]: langchain Document 对象列表
     """
     if k is None:
         k = RETRIEVAL_TOP_K
 
+    # 构建 query 的公共参数
+    query_kwargs = {"n_results": k}
+    if metadata_filter is not None and metadata_filter:
+        query_kwargs["where"] = metadata_filter
+
     if embedding_fn is not None:
         # 向后兼容：使用外部传入的 embedding 函数（用于测试 mock 场景）
         query_embedding = embedding_fn.embed_query(query)
-        results = chroma_collection.query(
-            query_embeddings=[query_embedding],
-            n_results=k
-        )
+        query_kwargs["query_embeddings"] = [query_embedding]
     else:
         # 使用集合内置的 embedding 函数，确保 add 和 query 维度一致
-        results = chroma_collection.query(
-            query_texts=[query],
-            n_results=k
-        )
+        query_kwargs["query_texts"] = [query]
+
+    results = chroma_collection.query(**query_kwargs)
 
     documents = []
     if results.get("documents") and results["documents"][0]:
@@ -192,6 +194,98 @@ def get_document_count(chroma_collection):
       - int: 文档总数
     """
     return chroma_collection.count()
+
+
+def list_documents(chroma_collection, offset=0, limit=20, style_filter=None):
+    """
+    获取知识库文档列表，支持分页和风格过滤
+    参数:
+      - chroma_collection: ChromaDB collection 实例
+      - offset: 偏移量，默认 0
+      - limit: 每页条数，默认 20
+      - style_filter: 可选的风格过滤字符串（单风格，如 "剧情"）
+    返回:
+      - dict: {"total": int, "offset": int, "limit": int, "documents": list[dict]}
+        每个文档 dict: {"id": str, "content": str, "metadata": dict}
+    """
+    # 构建查询参数
+    get_kwargs = {}
+    if style_filter:
+        get_kwargs["where"] = {"style": style_filter}
+
+    result = chroma_collection.get(**get_kwargs)
+
+    # 组合文档列表
+    all_docs = []
+    if result.get("ids"):
+        for i, doc_id in enumerate(result["ids"]):
+            all_docs.append({
+                "id": doc_id,
+                "content": result["documents"][i] if result.get("documents") else "",
+                "metadata": result["metadatas"][i] if result.get("metadatas") else {}
+            })
+
+    # 在 Python 侧执行分页（ChromaDB 不支持原生分页）
+    total = len(all_docs)
+    page_docs = all_docs[offset:offset + limit]
+
+    return {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "documents": page_docs
+    }
+
+
+def delete_document(chroma_collection, doc_id):
+    """
+    从向量库中删除单条文档
+    参数:
+      - chroma_collection: ChromaDB collection 实例
+      - doc_id: 要删除的文档 ID
+    返回:
+      - bool: 删除成功返回 True
+    """
+    chroma_collection.delete(ids=[doc_id])
+    return True
+
+
+def delete_documents(chroma_collection, doc_ids):
+    """
+    从向量库中批量删除多条文档
+    参数:
+      - chroma_collection: ChromaDB collection 实例
+      - doc_ids: 文档 ID 列表
+    返回:
+      - int: 已删除的文档数量
+    """
+    if not doc_ids:
+        return 0
+
+    chroma_collection.delete(ids=doc_ids)
+    return len(doc_ids)
+
+
+def get_documents_by_style(chroma_collection, style):
+    """
+    按风格获取文档列表
+    参数:
+      - chroma_collection: ChromaDB collection 实例
+      - style: 风格名称（如 "剧情"）
+    返回:
+      - list[dict]: 与该风格匹配的文档列表
+                    每个文档 dict: {"id": str, "content": str, "metadata": dict}
+    """
+    result = chroma_collection.get(where={"style": style})
+    docs = []
+    if result.get("ids"):
+        for i, doc_id in enumerate(result["ids"]):
+            docs.append({
+                "id": doc_id,
+                "content": result["documents"][i] if result.get("documents") else "",
+                "metadata": result["metadatas"][i] if result.get("metadatas") else {}
+            })
+    return docs
 
 
 def add_to_knowledge_base(chroma_collection, text=None, title=None, style=None, file=None):
